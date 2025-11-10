@@ -26,29 +26,28 @@ The application follows a client-server architecture:
 - **Frontend**: A single-page application (SPA) built with React, TypeScript, and Vite. It utilizes Tailwind CSS and shadcn/ui for styling and components, and React Router for client-side navigation.
 - **Backend/Database**: Supabase provides the backend services, including a PostgreSQL database for data storage, authentication for user management, and real-time APIs for data interaction.
 
-```mermaid
-graph TD
-    A[User] --> B{React Frontend (SPA)};
-    B --> C{Supabase Backend};
-    C --> D[PostgreSQL Database];
-    C --> E[Authentication];
-    C --> F[Real-time APIs];
-    D --> C;
-    E --> C;
-    F --> C;
-    C --> B;
-    B --> A;
-
-    subgraph "Browser"
-        B
-    end
-
-    subgraph "Supabase Cloud"
-        C
-        D
-        E
-        F
-    end
+```
++------------------+      +----------------------+      +--------------------+
+|       User       |----->|    React Frontend    |----->|  Supabase Backend  |
++------------------+      +----------------------+      +--------------------+
+                                     |                      |
+                                     |                      |
+                                     v                      v
+                              +----------------+      +----------------+
+                              |   Browser      |      | Supabase Cloud |
+                              +----------------+      +----------------+
+                                                            |
+                                                            |
+      +-----------------------------------------------------+
+      |
+      v
++-----------------------+
+|  PostgreSQL Database  |
++-----------------------+
+|     Authentication    |
++-----------------------+
+|    Real-time APIs     |
++-----------------------+
 ```
 
 ## Getting Started
