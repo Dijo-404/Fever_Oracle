@@ -7,9 +7,11 @@ Fever Oracle is a comprehensive healthcare monitoring system that uses machine l
 - **Dashboard**: Real-time overview of outbreak predictions, patient status, and system metrics
 - **Patient Risk Assessment**: ML-based individualized risk assessment using digital twin models
 - **Alerts**: Cross-institutional federated learning and early warning system
+- **Kafka Monitor Page**: Real-time Kafka pipeline monitoring, data streams, and ML model predictions
 - **Blockchain Security**: Immutable audit logging, data integrity verification, and zero-knowledge proofs
 - **Wastewater Monitoring**: Integration with wastewater viral load data
 - **Pharmacy Data**: OTC medication sales trend analysis
+- **Mock Data & Models**: Works with mock data when Kafka is unavailable for demonstration
 - **Responsive Design**: Works seamlessly on desktop and mobile devices
 - **Secure Authentication**: Login system with credential validation
 
@@ -20,8 +22,15 @@ fever-oracle/
 ├── backend/                    # Flask REST API
 │   ├── app.py                 # Main Flask application
 │   ├── blockchain_service.py  # Blockchain API endpoints
+│   ├── kafka_service.py       # Kafka monitoring and data access
+│   ├── config/                # Configuration files
+│   │   ├── kafka_topics.json  # Kafka topic configuration
+│   │   └── blockchain_config.json  # Blockchain settings
+│   ├── middleware/            # Middleware components
+│   │   └── cache.py           # Response caching
 │   ├── models/                # Data models
-│   │   ├── blockchain.py      # Blockchain implementation
+│   │   ├── blockchain.py      # Blockchain implementation (with caching)
+│   │   ├── mock_model.py      # Mock ML models for demonstration
 │   │   ├── patient.py         # Patient data model
 │   │   └── outbreak.py        # Outbreak prediction model
 │   └── requirements.txt       # Python dependencies
@@ -31,7 +40,15 @@ fever-oracle/
 │   │   │   ├── blockchain.ts # Blockchain API client
 │   │   │   └── api.ts        # General API client
 │   │   ├── pages/            # Page components
+│   │   │   ├── KafkaMonitor.tsx  # Kafka monitoring page
+│   │   │   ├── Dashboard.tsx
+│   │   │   ├── PatientRisk.tsx
+│   │   │   └── Alerts.tsx
 │   │   └── components/       # UI components
+│   │       ├── KafkaMonitor.tsx  # Kafka stats component
+│   │       ├── RealtimeDataStream.tsx  # Data stream component
+│   │       ├── ModelPredictions.tsx  # Model predictions component
+│   │       └── ErrorBoundary.tsx  # Error handling
 │   ├── package.json          # Node dependencies
 │   └── vite.config.ts        # Vite configuration
 ├── data/                     # Data files
@@ -79,11 +96,36 @@ fever-oracle/
 
 ## Getting Started
 
+### Quick Start (Mock Mode - No Kafka Required)
+
+The system works in **mock mode** without Kafka for quick demonstration:
+
+1. **Start Backend:**
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   python app.py
+   ```
+   Backend will run on `http://localhost:5000`
+
+2. **Start Frontend:**
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
+   Frontend will run on `http://localhost:8080`
+
+3. **Access Kafka Monitor:**
+   - Navigate to `http://localhost:8080/kafka-monitor`
+   - All features work with mock data automatically
+   - No Kafka setup required!
+
 ### Prerequisites
 
 - **Node.js** 18+ and npm
 - **Python** 3.11+
-- **Docker** and Docker Compose (optional)
+- **Docker** and Docker Compose (optional, for full Kafka setup)
 
 ### Installation
 
@@ -198,6 +240,36 @@ Kafka is configured in `docker-compose.yml`:
 - **Bootstrap Server**: `localhost:9092` (external), `kafka:9093` (internal)
 - **Auto-create Topics**: Enabled
 - **Replication Factor**: 1 (for development)
+
+Kafka topics are configured in `backend/config/kafka_topics.json`:
+- Topic definitions with partitions and retention policies
+- Consumer group configurations
+- Producer settings
+
+### Mock Mode
+
+The system includes comprehensive mock data and models that work even when Kafka is not running:
+- **Mock Kafka Data**: Automatically generated when Kafka is unavailable
+- **Mock ML Models**: `backend/models/mock_model.py` provides realistic predictions
+- **Graceful Degradation**: All features work in mock mode for demonstration
+
+To use mock mode:
+1. Simply start the backend (Kafka not required)
+2. Navigate to `/kafka-monitor` page
+3. All components will show mock data automatically
+4. Model predictions work with mock data
+
+### Kafka Monitor Page
+
+Access the Kafka Monitor page at `/kafka-monitor` to see:
+1. **Kafka Statistics**: Real-time message throughput and topic status
+2. **Data Stream**: Live messages from Kafka topics (or mock data)
+3. **Model Predictions**: ML predictions using Kafka data (or mock data)
+
+The page works in three modes:
+- **Live Mode**: When Kafka is running and producing data
+- **Mock Mode**: When Kafka is unavailable (automatic fallback)
+- **Hybrid Mode**: Mix of live and mock data
 
 ## API Endpoints
 

@@ -13,6 +13,7 @@ from functools import wraps
 from blockchain_service import blockchain_bp
 from models.blockchain import blockchain
 from kafka_service import kafka_bp
+from models.mock_model import outbreak_predictor
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})  # Enable CORS for frontend
@@ -257,59 +258,73 @@ def get_dashboard_metrics():
 
 @app.route('/api/model/predict', methods=['POST'])
 def model_predict():
-    """Run model prediction on latest Kafka data"""
+    """Run model prediction on latest Kafka data with mock fallback"""
     try:
         data = request.get_json() or {}
         
-        # Simulate model processing
-        # In production, this would call your actual ML model
         wastewater_data = data.get('wastewater', [])
         pharmacy_data = data.get('pharmacy', [])
         
-        # Simple prediction logic (replace with actual model)
-        avg_viral_load = 0
-        if wastewater_data:
-            avg_viral_load = sum(d.get('viral_load', 0) for d in wastewater_data) / len(wastewater_data)
+        # If no data provided, use mock data for demonstration
+        use_mock = not wastewater_data and not pharmacy_data
+        if use_mock:
+            import random
+            wastewater_data = [
+                {'viral_load': round(45 + random.uniform(-10, 20), 2)},
+                {'viral_load': round(50 + random.uniform(-5, 15), 2)}
+            ]
+            pharmacy_data = [
+                {'sales_index': round(75 + random.uniform(-10, 25), 2)},
+                {'sales_index': round(80 + random.uniform(-5, 20), 2)}
+            ]
         
-        avg_sales = 0
-        if pharmacy_data:
-            avg_sales = sum(d.get('sales_index', 0) for d in pharmacy_data) / len(pharmacy_data)
-        
-        # Calculate risk score based on data
-        viral_load_factor = min(100, (avg_viral_load / 70) * 50) if avg_viral_load > 0 else 25
-        sales_factor = min(100, (avg_sales / 100) * 50) if avg_sales > 0 else 25
-        
-        risk_score = min(100, viral_load_factor + sales_factor)
-        
-        prediction = {
-            'risk_level': 'high' if risk_score > 70 else 'medium' if risk_score > 40 else 'low',
-            'risk_score': round(risk_score, 2),
-            'confidence': 85,
-            'factors': {
-                'wastewater_trend': 'increasing' if avg_viral_load > 60 else 'stable' if avg_viral_load > 0 else 'no_data',
-                'pharmacy_trend': 'increasing' if avg_sales > 80 else 'stable' if avg_sales > 0 else 'no_data'
-            },
-            'timestamp': datetime.now().isoformat(),
-            'data_points': {
-                'wastewater_samples': len(wastewater_data),
-                'pharmacy_samples': len(pharmacy_data),
-                'avg_viral_load': round(avg_viral_load, 2),
-                'avg_sales_index': round(avg_sales, 2)
-            }
-        }
+        # Use mock model for prediction
+        prediction = outbreak_predictor.predict(wastewater_data, pharmacy_data)
+        prediction['mode'] = 'mock' if use_mock else 'live'
         
         # Log to blockchain
-        blockchain.add_audit_log(
-            event_type='model_prediction',
-            user_id='system',
-            action='predict_outbreak',
-            resource='model/predict',
-            metadata=prediction
-        )
+        try:
+            blockchain.add_audit_log(
+                event_type='model_prediction',
+                user_id='system',
+                action='predict_outbreak',
+                resource='model/predict',
+                metadata=prediction
+            )
+        except Exception as e:
+            print(f"Warning: Could not log to blockchain: {e}")
         
         return jsonify(prediction)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        # Return mock prediction on error using model
+        try:
+            prediction = outbreak_predictor.predict([], [])
+            prediction['mode'] = 'mock'
+            prediction['error'] = str(e)
+            return jsonify(prediction), 200
+        except:
+            # Final fallback
+            return jsonify({
+                'risk_level': 'medium',
+                'risk_score': 45.5,
+                'confidence': 75,
+                'factors': {
+                    'wastewater_trend': 'stable',
+                    'pharmacy_trend': 'stable'
+                },
+                'timestamp': datetime.now().isoformat(),
+                'data_points': {
+                    'wastewater_samples': 0,
+                    'pharmacy_samples': 0,
+                    'avg_viral_load': 0,
+                    'avg_sales_index': 0
+                },
+                'model_version': 'outbreak_v1.0',
+                'mode': 'mock',
+                'error': str(e)
+            }), 200
 
 if __name__ == '__main__':
     # Ensure data directory exists
