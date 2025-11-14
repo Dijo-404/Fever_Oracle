@@ -240,7 +240,27 @@ const Alerts = () => {
                         cx="50%"
                         cy="50%"
                         outerRadius={70}
-                        label={false}
+                        label={({ cx, cy, midAngle, innerRadius, outerRadius, name, value, percent }) => {
+                          const RADIAN = Math.PI / 180;
+                          const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+                          const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                          const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+                          return (
+                            <text
+                              x={x}
+                              y={y}
+                              fill="white"
+                              textAnchor={x > cx ? 'start' : 'end'}
+                              dominantBaseline="central"
+                              className="text-xs font-semibold"
+                              style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
+                            >
+                              {`${name}: ${value}`}
+                            </text>
+                          );
+                        }}
+                        labelLine={false}
                       >
                         {sourceDistribution.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
