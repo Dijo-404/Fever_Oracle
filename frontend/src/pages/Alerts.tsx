@@ -1,23 +1,69 @@
-import { Bell, Shield, Activity, Building2, BarChart3, TrendingUp, AlertTriangle, Users } from "lucide-react";
+import { useState, useMemo, useCallback } from "react";
+import { Bell, Shield, Activity, Building2, BarChart3, TrendingUp, AlertTriangle, Users, Search, RefreshCw, Download, Filter } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Bar, BarChart, XAxis, YAxis, CartesianGrid, Cell, PieChart, Pie } from "recharts";
 import { alertData, regionalOutbreakData, AlertData } from "@/lib/mockData";
+import { toast } from "sonner";
 
 const Alerts = () => {
-  const crossInstitutionalAlerts = alertData.filter(a => a.source === "Federated Learning") as Array<AlertData & { institutions: string[]; pattern: string }>;
-  const localAlerts = alertData.filter(a => a.source !== "Federated Learning");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [severityFilter, setSeverityFilter] = useState<"all" | "high" | "medium" | "low">("all");
+  const [sourceFilter, setSourceFilter] = useState<"all" | string>("all");
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Alert statistics
-  const alertStats = {
-    total: alertData.length,
-    high: alertData.filter(a => a.severity === "high").length,
-    medium: alertData.filter(a => a.severity === "medium").length,
-    low: alertData.filter(a => a.severity === "low").length,
-    totalAffected: alertData.reduce((sum, a) => sum + a.affectedPopulation, 0),
-  };
+  // Get unique sources for filter
+  const uniqueSources = useMemo(() => {
+    return Array.from(new Set(alertData.map(a => a.source)));
+  }, []);
+
+  // Filter alerts
+  const filteredAlerts = useMemo(() => {
+    let filtered = alertData;
+
+    // Filter by severity
+    if (severityFilter !== "all") {
+      filtered = filtered.filter(a => a.severity === severityFilter);
+    }
+
+    // Filter by source
+    if (sourceFilter !== "all") {
+      filtered = filtered.filter(a => a.source === sourceFilter);
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(a => 
+        a.id.toLowerCase().includes(query) ||
+        a.region.toLowerCase().includes(query) ||
+        a.message.toLowerCase().includes(query) ||
+        a.source.toLowerCase().includes(query)
+      );
+    }
+
+    return filtered;
+  }, [searchQuery, severityFilter, sourceFilter]);
+
+  const crossInstitutionalAlerts = filteredAlerts.filter(a => a.source === "Federated Learning") as Array<AlertData & { institutions: string[]; pattern: string }>;
+  const localAlerts = filteredAlerts.filter(a => a.source !== "Federated Learning");
+
+  // Alert statistics (based on filtered alerts)
+  const alertStats = useMemo(() => ({
+    total: filteredAlerts.length,
+    high: filteredAlerts.filter(a => a.severity === "high").length,
+    medium: filteredAlerts.filter(a => a.severity === "medium").length,
+    low: filteredAlerts.filter(a => a.severity === "low").length,
+    totalAffected: filteredAlerts.reduce((sum, a) => sum + a.affectedPopulation, 0),
+    avgConfidence: filteredAlerts.length > 0 
+      ? Math.round(filteredAlerts.reduce((sum, a) => sum + a.confidence, 0) / filteredAlerts.length)
+      : 0,
+  }), [filteredAlerts]);
 
   // Alert trends over time (last 7 days)
   const alertTrendData = [
@@ -29,6 +75,39 @@ const Alerts = () => {
     { day: "Sat", alerts: 3, high: 1, medium: 1, low: 1 },
     { day: "Sun", alerts: alertStats.total, high: alertStats.high, medium: alertStats.medium, low: alertStats.low },
   ];
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    setIsRefreshing(false);
+    toast.success("Alerts refreshed");
+  }, []);
+
+  const handleExport = useCallback(() => {
+    const csv = [
+      ["ID", "Severity", "Region", "Message", "Source", "Confidence", "Affected Population", "Trend", "Timestamp"].join(","),
+      ...filteredAlerts.map(a => [
+        a.id,
+        a.severity,
+        `"${a.region}"`,
+        `"${a.message}"`,
+        `"${a.source}"`,
+        a.confidence,
+        a.affectedPopulation,
+        a.trend,
+        a.timestamp
+      ].join(","))
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `alerts-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Alerts exported successfully");
+  }, [filteredAlerts]);
 
   // Source distribution - filter out zero values
   const sourceDistribution = [
@@ -46,11 +125,78 @@ const Alerts = () => {
             <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">Alert System</h1>
             <p className="text-sm sm:text-base text-muted-foreground">Cross-institutional federated learning and early warning system</p>
           </div>
-          <Badge variant="outline" className="text-xs sm:text-sm flex items-center gap-2">
-            <Shield className="h-3 w-3" />
-            Privacy Protected
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              aria-label="Refresh alerts"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExport}
+              aria-label="Export alerts"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export
+            </Button>
+            <Badge variant="outline" className="text-xs sm:text-sm flex items-center gap-2">
+              <Shield className="h-3 w-3" />
+              Privacy Protected
+            </Badge>
+          </div>
         </div>
+
+        {/* Filters */}
+        <Card className="shadow-card">
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search alerts..."
+                  className="pl-10"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  aria-label="Search alerts"
+                />
+              </div>
+              <Select value={severityFilter} onValueChange={(value: "all" | "high" | "medium" | "low") => setSeverityFilter(value)}>
+                <SelectTrigger>
+                  <Filter className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Filter by severity" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Severities</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter by source" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sources</SelectItem>
+                  {uniqueSources.map(source => (
+                    <SelectItem key={source} value={source}>{source}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {searchQuery || severityFilter !== "all" || sourceFilter !== "all" ? (
+              <div className="mt-3 text-sm text-muted-foreground">
+                Showing {filteredAlerts.length} of {alertData.length} alerts
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
 
         {/* Alert Statistics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -93,7 +239,7 @@ const Alerts = () => {
                 <div>
                   <p className="text-sm text-muted-foreground">Avg Confidence</p>
                   <p className="text-2xl font-bold text-foreground">
-                    {Math.round(alertData.reduce((sum, a) => sum + a.confidence, 0) / alertData.length)}%
+                    {alertStats.avgConfidence}%
                   </p>
                 </div>
                 <TrendingUp className="h-8 w-8 text-success opacity-50" />

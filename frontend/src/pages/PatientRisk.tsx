@@ -1,53 +1,141 @@
-import { useState, useMemo } from "react";
-import { Search, TrendingUp, AlertCircle, BarChart3, LineChart, Thermometer } from "lucide-react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { Search, TrendingUp, AlertCircle, BarChart3, LineChart, Thermometer, Download, RefreshCw, ArrowUpDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Bar, BarChart, Line, LineChart as RechartsLineChart, XAxis, YAxis, CartesianGrid, Cell } from "recharts";
 import { patientRiskData, riskDistribution, featureImportance } from "@/lib/mockData";
+import { toast } from "sonner";
 
 const PatientRisk = () => {
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"name" | "riskScore" | "age" | "temperature">("riskScore");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Filter patients based on search query
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Filter and sort patients
   const filteredPatients = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return patientRiskData;
+    let filtered = patientRiskData;
+
+    // Filter by search query
+    if (debouncedQuery.trim()) {
+      const query = debouncedQuery.toLowerCase().trim();
+      filtered = filtered.filter((patient) => {
+        // Search by ID
+        if (patient.id.toLowerCase().includes(query)) return true;
+        
+        // Search by name
+        if (patient.name.toLowerCase().includes(query)) return true;
+        
+        // Search by risk level
+        if (patient.riskLevel.toLowerCase().includes(query)) return true;
+        
+        // Search by risk score
+        if (patient.riskScore.toString().includes(query)) return true;
+        
+        // Search by age
+        if (patient.age.toString().includes(query)) return true;
+        
+        // Search by temperature
+        if (patient.lastTemperature.toString().includes(query)) return true;
+        
+        // Search in risk factors
+        if (patient.factors.some(factor => factor.toLowerCase().includes(query))) return true;
+        
+        // Search in comorbidities
+        if (patient.comorbidities.some(comorbidity => comorbidity.toLowerCase().includes(query))) return true;
+        
+        // Search in symptoms
+        if (patient.symptoms.some(symptom => symptom.toLowerCase().includes(query))) return true;
+        
+        return false;
+      });
     }
 
-    const query = searchQuery.toLowerCase().trim();
-    return patientRiskData.filter((patient) => {
-      // Search by ID
-      if (patient.id.toLowerCase().includes(query)) return true;
-      
-      // Search by name
-      if (patient.name.toLowerCase().includes(query)) return true;
-      
-      // Search by risk level
-      if (patient.riskLevel.toLowerCase().includes(query)) return true;
-      
-      // Search by risk score
-      if (patient.riskScore.toString().includes(query)) return true;
-      
-      // Search by age
-      if (patient.age.toString().includes(query)) return true;
-      
-      // Search by temperature
-      if (patient.lastTemperature.toString().includes(query)) return true;
-      
-      // Search in risk factors
-      if (patient.factors.some(factor => factor.toLowerCase().includes(query))) return true;
-      
-      // Search in comorbidities
-      if (patient.comorbidities.some(comorbidity => comorbidity.toLowerCase().includes(query))) return true;
-      
-      // Search in symptoms
-      if (patient.symptoms.some(symptom => symptom.toLowerCase().includes(query))) return true;
-      
-      return false;
+    // Sort patients
+    const sorted = [...filtered].sort((a, b) => {
+      let aValue: string | number;
+      let bValue: string | number;
+
+      switch (sortBy) {
+        case "name":
+          aValue = a.name.toLowerCase();
+          bValue = b.name.toLowerCase();
+          break;
+        case "riskScore":
+          aValue = a.riskScore;
+          bValue = b.riskScore;
+          break;
+        case "age":
+          aValue = a.age;
+          bValue = b.age;
+          break;
+        case "temperature":
+          aValue = a.lastTemperature;
+          bValue = b.lastTemperature;
+          break;
+        default:
+          return 0;
+      }
+
+      if (typeof aValue === "string" && typeof bValue === "string") {
+        return sortOrder === "asc" 
+          ? aValue.localeCompare(bValue)
+          : bValue.localeCompare(aValue);
+      } else {
+        return sortOrder === "asc"
+          ? (aValue as number) - (bValue as number)
+          : (bValue as number) - (aValue as number);
+      }
     });
-  }, [searchQuery]);
+
+    return sorted;
+  }, [debouncedQuery, sortBy, sortOrder]);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    // Simulate refresh
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    setIsRefreshing(false);
+    toast.success("Patient data refreshed");
+  }, []);
+
+  const handleExport = useCallback(() => {
+    const csv = [
+      ["ID", "Name", "Age", "Risk Score", "Risk Level", "Temperature", "Symptoms", "Comorbidities"].join(","),
+      ...filteredPatients.map(p => [
+        p.id,
+        `"${p.name}"`,
+        p.age,
+        p.riskScore,
+        p.riskLevel,
+        p.lastTemperature,
+        `"${p.symptoms.join("; ")}"`,
+        `"${p.comorbidities.join("; ")}"`
+      ].join(","))
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `patient-risk-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Patient data exported successfully");
+  }, [filteredPatients]);
 
   const getRiskColor = (level: string) => {
     switch (level) {
@@ -68,30 +156,79 @@ const PatientRisk = () => {
   return (
     <div className="min-h-screen bg-background">
     <div className="container mx-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
-    <div className="flex items-center justify-between">
+    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
     <div>
     <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">Patient Risk Modeling</h1>
     <p className="text-sm sm:text-base text-muted-foreground">Sequential ML-based individualized risk assessment</p>
     </div>
+    <div className="flex gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={handleRefresh}
+        disabled={isRefreshing}
+        aria-label="Refresh patient data"
+      >
+        <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+        Refresh
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={handleExport}
+        aria-label="Export patient data"
+      >
+        <Download className="h-4 w-4 mr-2" />
+        Export
+      </Button>
+    </div>
     </div>
 
-    {/* Search */}
+    {/* Search and Sort */}
     <Card className="shadow-card">
     <CardContent className="pt-6">
-    <div className="relative">
-    <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-    <Input
-    placeholder="Search patients by ID, name, risk factors, symptoms, or comorbidities..."
-    className="pl-10"
-    value={searchQuery}
-    onChange={(e) => setSearchQuery(e.target.value)}
-    />
-    </div>
-    {searchQuery && (
-      <div className="mt-3 text-sm text-muted-foreground">
-        Found {filteredPatients.length} patient{filteredPatients.length !== 1 ? 's' : ''} matching "{searchQuery}"
+    <div className="space-y-4">
+      <div className="relative">
+        <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search patients by ID, name, risk factors, symptoms, or comorbidities..."
+          className="pl-10"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          aria-label="Search patients"
+        />
       </div>
-    )}
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+        <div className="flex items-center gap-2">
+          <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">Sort by:</span>
+          <Select value={sortBy} onValueChange={(value: "name" | "riskScore" | "age" | "temperature") => setSortBy(value)}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="riskScore">Risk Score</SelectItem>
+              <SelectItem value="name">Name</SelectItem>
+              <SelectItem value="age">Age</SelectItem>
+              <SelectItem value="temperature">Temperature</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+            aria-label={`Sort ${sortOrder === "asc" ? "descending" : "ascending"}`}
+          >
+            {sortOrder === "asc" ? "↑" : "↓"}
+          </Button>
+        </div>
+        {debouncedQuery && (
+          <div className="text-sm text-muted-foreground">
+            Found {filteredPatients.length} patient{filteredPatients.length !== 1 ? 's' : ''} matching "{debouncedQuery}"
+          </div>
+        )}
+      </div>
+    </div>
     </CardContent>
     </Card>
 

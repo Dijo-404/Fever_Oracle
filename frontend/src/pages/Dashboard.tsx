@@ -1,9 +1,10 @@
-import { Activity, AlertTriangle, TrendingUp, Users, BarChart3, LineChart, MapPin, Shield, Link2 } from "lucide-react";
+import { Activity, AlertTriangle, TrendingUp, Users, BarChart3, LineChart, MapPin, Shield, Link2, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { Area, AreaChart, Bar, BarChart, Line, LineChart as RechartsLineChart, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Cell } from "recharts";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { 
   outbreakPredictions, 
   regionalOutbreakData, 
@@ -15,16 +16,39 @@ import {
   forecastAccuracy
 } from "@/lib/mockData";
 import { blockchainClient, BlockchainInfo } from "@/lib/blockchain";
+import { toast } from "sonner";
 
 const Dashboard = () => {
   const [blockchainInfo, setBlockchainInfo] = useState<BlockchainInfo | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchBlockchainInfo = useCallback(async () => {
+    try {
+      setError(null);
+      const info = await blockchainClient.getBlockchainInfo();
+      setBlockchainInfo(info);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to fetch blockchain info";
+      setError(errorMessage);
+      console.error("Error fetching blockchain info:", err);
+      toast.error("Failed to load blockchain status");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    // Fetch blockchain info
-    blockchainClient.getBlockchainInfo()
-      .then(setBlockchainInfo)
-      .catch(console.error);
-  }, []);
+    fetchBlockchainInfo();
+  }, [fetchBlockchainInfo]);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await fetchBlockchainInfo();
+    setIsRefreshing(false);
+    toast.success("Dashboard refreshed");
+  }, [fetchBlockchainInfo]);
 
   const metrics = [
     {
@@ -107,7 +131,17 @@ const Dashboard = () => {
             <p className="text-sm sm:text-base text-muted-foreground">Real-time outbreak prediction and patient risk monitoring</p>
           </div>
           <div className="flex items-center gap-2">
-            {blockchainInfo && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              aria-label="Refresh dashboard"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            {blockchainInfo && !error && (
               <Badge variant="outline" className="text-xs sm:text-sm flex items-center gap-1.5">
                 <Link2 className="h-3 w-3" />
                 <span>Blockchain: {blockchainInfo.chain_length} blocks</span>
@@ -116,8 +150,13 @@ const Dashboard = () => {
                 )}
               </Badge>
             )}
+            {error && (
+              <Badge variant="destructive" className="text-xs sm:text-sm">
+                Blockchain: Offline
+              </Badge>
+            )}
             <Badge variant="outline" className="text-xs sm:text-sm">
-              Last updated: 5 min ago
+              Last updated: {new Date().toLocaleTimeString()}
             </Badge>
           </div>
         </div>
