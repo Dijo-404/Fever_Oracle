@@ -240,21 +240,27 @@ const Alerts = () => {
                         cx="50%"
                         cy="50%"
                         outerRadius={70}
-                        label={({ cx, cy, midAngle, innerRadius, outerRadius, name, value, percent }) => {
+                        label={({ cx, cy, midAngle, innerRadius, outerRadius, name, value }) => {
                           const RADIAN = Math.PI / 180;
-                          const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+                          const radius = innerRadius + (outerRadius - innerRadius) * 0.6;
                           const x = cx + radius * Math.cos(-midAngle * RADIAN);
                           const y = cy + radius * Math.sin(-midAngle * RADIAN);
 
+                          // Determine text anchor based on position
+                          const textAnchor = x > cx ? 'start' : 'end';
+                          
                           return (
                             <text
                               x={x}
                               y={y}
                               fill="white"
-                              textAnchor={x > cx ? 'start' : 'end'}
-                              dominantBaseline="central"
-                              className="text-xs font-semibold"
-                              style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
+                              textAnchor={textAnchor}
+                              dominantBaseline="middle"
+                              className="text-[11px] font-semibold pointer-events-none"
+                              style={{ 
+                                textShadow: '0 1px 3px rgba(0,0,0,0.8), 0 0 1px rgba(0,0,0,0.5)',
+                                fontWeight: 600
+                              }}
                             >
                               {`${name}: ${value}`}
                             </text>
@@ -293,16 +299,16 @@ const Alerts = () => {
                       const percentage = ((item.value / alertStats.total) * 100).toFixed(0);
                       return (
                         <div key={index} className="flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-2.5">
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             <div 
                               className="w-3.5 h-3.5 rounded-full flex-shrink-0" 
                               style={{ backgroundColor: item.color }}
                             />
-                            <span className="text-foreground font-medium">{item.name}</span>
+                            <span className="text-foreground font-medium truncate">{item.name}</span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-muted-foreground">{item.value} alert{item.value !== 1 ? 's' : ''}</span>
-                            <span className="text-foreground font-semibold">({percentage}%)</span>
+                          <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                            <span className="text-muted-foreground whitespace-nowrap">{item.value} alert{item.value !== 1 ? 's' : ''}</span>
+                            <span className="text-foreground font-semibold whitespace-nowrap">({percentage}%)</span>
                           </div>
                         </div>
                       );
