@@ -30,7 +30,15 @@ export const ModelPredictions = () => {
       // First fetch latest Kafka data
       const dataResponse = await fetch('/api/kafka/latest-data?topics=wastewater,pharmacy');
       if (!dataResponse.ok) {
-        throw new Error('Failed to fetch Kafka data');
+        const errorText = await dataResponse.text();
+        if (errorText.trim().startsWith('<!')) {
+          throw new Error('Backend server error - received HTML instead of JSON');
+        }
+        throw new Error(`Failed to fetch Kafka data: ${errorText}`);
+      }
+      const contentType = dataResponse.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Invalid response format - expected JSON');
       }
       const kafkaData = await dataResponse.json();
 
@@ -40,11 +48,19 @@ export const ModelPredictions = () => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(kafkaData.data),
+        body: JSON.stringify(kafkaData.data || {}),
       });
 
       if (!predictionResponse.ok) {
-        throw new Error('Failed to run prediction');
+        const errorText = await predictionResponse.text();
+        if (errorText.trim().startsWith('<!')) {
+          throw new Error('Backend server error - received HTML instead of JSON');
+        }
+        throw new Error(`Failed to run prediction: ${errorText}`);
+      }
+      const predContentType = predictionResponse.headers.get('content-type');
+      if (!predContentType || !predContentType.includes('application/json')) {
+        throw new Error('Invalid response format - expected JSON');
       }
 
       const result = await predictionResponse.json();

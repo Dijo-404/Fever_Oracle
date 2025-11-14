@@ -26,13 +26,23 @@ export const KafkaMonitor = () => {
       try {
         const response = await fetch('/api/kafka/stats');
         if (!response.ok) {
-          throw new Error('Failed to fetch Kafka stats');
+          const errorText = await response.text();
+          // Check if response is HTML (error page)
+          if (errorText.trim().startsWith('<!')) {
+            throw new Error('Backend server error - received HTML instead of JSON');
+          }
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          throw new Error('Invalid response format - expected JSON');
         }
         const data = await response.json();
         setStats(data);
         setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load Kafka stats');
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load Kafka stats';
+        setError(errorMessage);
         console.error('Failed to fetch Kafka stats:', err);
       } finally {
         setIsLoading(false);

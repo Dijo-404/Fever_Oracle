@@ -20,7 +20,16 @@ export const RealtimeDataStream = () => {
       try {
         const response = await fetch('/api/kafka/latest-data?topics=wastewater,pharmacy,alerts,vitals,patients,outbreak');
         if (!response.ok) {
-          throw new Error('Failed to fetch real-time data');
+          const errorText = await response.text();
+          // Check if response is HTML (error page)
+          if (errorText.trim().startsWith('<!')) {
+            throw new Error('Backend server error - received HTML instead of JSON');
+          }
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          throw new Error('Invalid response format - expected JSON');
         }
         const data = await response.json();
         

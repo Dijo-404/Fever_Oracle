@@ -111,67 +111,99 @@ def get_kafka_stats():
     """Get Kafka statistics"""
     try:
         calculate_throughput()
+        # Return empty stats if no topics have been seen yet
+        topics_list = [
+            {
+                'name': name,
+                'messages_per_minute': stats['messages_per_minute'],
+                'total_messages': stats['total_messages'],
+                'status': stats['status']
+            }
+            for name, stats in kafka_stats['topics'].items()
+        ]
+        
+        # If no topics, return default structure
+        if not topics_list:
+            topics_list = [
+                {'name': 'fever-oracle-wastewater', 'messages_per_minute': 0, 'total_messages': 0, 'status': 'idle'},
+                {'name': 'fever-oracle-pharmacy', 'messages_per_minute': 0, 'total_messages': 0, 'status': 'idle'},
+                {'name': 'fever-oracle-patients', 'messages_per_minute': 0, 'total_messages': 0, 'status': 'idle'},
+                {'name': 'fever-oracle-vitals', 'messages_per_minute': 0, 'total_messages': 0, 'status': 'idle'},
+                {'name': 'fever-oracle-alerts', 'messages_per_minute': 0, 'total_messages': 0, 'status': 'idle'},
+                {'name': 'fever-oracle-outbreak', 'messages_per_minute': 0, 'total_messages': 0, 'status': 'idle'},
+            ]
+        
         return jsonify({
-            'topics': [
-                {
-                    'name': name,
-                    'messages_per_minute': stats['messages_per_minute'],
-                    'total_messages': stats['total_messages'],
-                    'status': stats['status']
-                }
-                for name, stats in kafka_stats['topics'].items()
-            ],
+            'topics': topics_list,
             'total_throughput': kafka_stats['total_throughput'],
             'consumer_lag': kafka_stats['consumer_lag']
         })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @kafka_bp.route('/api/kafka/latest-data', methods=['GET'])
 def get_latest_kafka_data():
     """Get latest data from Kafka topics"""
     try:
-        consumer = KafkaConsumer(
-            bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
-            auto_offset_reset='latest',
-            consumer_timeout_ms=2000,
-            enable_auto_commit=False
-        )
-        
-        topics_param = request.args.get('topics', 'wastewater,pharmacy')
-        topics_list = [t.strip() for t in topics_param.split(',')]
-        
-        topic_map = {
-            'wastewater': 'fever-oracle-wastewater',
-            'pharmacy': 'fever-oracle-pharmacy',
-            'patients': 'fever-oracle-patients',
-            'vitals': 'fever-oracle-vitals',
-            'alerts': 'fever-oracle-alerts',
-            'outbreak': 'fever-oracle-outbreak'
-        }
-        
-        subscribed_topics = [topic_map.get(t, f'fever-oracle-{t}') for t in topics_list]
-        consumer.subscribe(subscribed_topics)
-        
-        latest_data = {}
-        message_count = 0
-        max_messages = 20  # Get up to 20 messages per topic
-        
+        consumer = None
         try:
-            for message in consumer:
-                topic = message.topic.replace('fever-oracle-', '')
-                if topic not in latest_data:
-                    latest_data[topic] = []
-                latest_data[topic].append(message.value)
-                message_count += 1
-                if message_count >= max_messages * len(subscribed_topics):
-                    break
-        except Exception as e:
-            # Timeout is expected when no new messages
-            pass
+            consumer = KafkaConsumer(
+                bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+                value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+                auto_offset_reset='latest',
+                consumer_timeout_ms=2000,
+                enable_auto_commit=False,
+                api_version=(0, 10, 1)
+            )
+            
+            topics_param = request.args.get('topics', 'wastewater,pharmacy')
+            topics_list = [t.strip() for t in topics_param.split(',')]
+            
+            topic_map = {
+                'wastewater': 'fever-oracle-wastewater',
+                'pharmacy': 'fever-oracle-pharmacy',
+                'patients': 'fever-oracle-patients',
+                'vitals': 'fever-oracle-vitals',
+                'alerts': 'fever-oracle-alerts',
+                'outbreak': 'fever-oracle-outbreak'
+            }
+            
+            subscribed_topics = [topic_map.get(t, f'fever-oracle-{t}') for t in topics_list]
+            consumer.subscribe(subscribed_topics)
+            
+            latest_data = {}
+            message_count = 0
+            max_messages = 20  # Get up to 20 messages per topic
+            
+            try:
+                for message in consumer:
+                    topic = message.topic.replace('fever-oracle-', '')
+                    if topic not in latest_data:
+                        latest_data[topic] = []
+                    latest_data[topic].append(message.value)
+                    message_count += 1
+                    if message_count >= max_messages * len(subscribed_topics):
+                        break
+            except Exception as e:
+                # Timeout is expected when no new messages
+                pass
+        except KafkaError as e:
+            # Kafka connection error - return empty data
+            return jsonify({
+                'data': {},
+                'count': 0,
+                'timestamp': datetime.now().isoformat(),
+                'error': f'Kafka connection error: {str(e)}',
+                'message': 'Kafka may not be running. Please start Kafka and the producer.'
+            })
         finally:
-            consumer.close()
+            if consumer:
+                try:
+                    consumer.close()
+                except:
+                    pass
         
         return jsonify({
             'data': latest_data,
@@ -179,7 +211,9 @@ def get_latest_kafka_data():
             'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e), "message": "Failed to fetch Kafka data"}), 500
 
 # Start monitoring when module is imported
 try:
