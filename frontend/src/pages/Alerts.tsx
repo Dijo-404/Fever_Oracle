@@ -30,13 +30,13 @@ const Alerts = () => {
     { day: "Sun", alerts: alertStats.total, high: alertStats.high, medium: alertStats.medium, low: alertStats.low },
   ];
 
-  // Source distribution
+  // Source distribution - filter out zero values
   const sourceDistribution = [
     { name: "Federated Learning", value: crossInstitutionalAlerts.length, color: "hsl(var(--chart-1))" },
     { name: "Wastewater", value: localAlerts.filter(a => a.source.includes("Wastewater")).length, color: "hsl(var(--chart-2))" },
     { name: "Pharmacy", value: localAlerts.filter(a => a.source.includes("Pharmacy")).length, color: "hsl(var(--chart-3))" },
     { name: "Climate", value: localAlerts.filter(a => a.source.includes("Climate")).length, color: "hsl(var(--chart-4))" },
-  ];
+  ].filter(item => item.value > 0);
 
   return (
     <div className="min-h-screen bg-background">
@@ -231,7 +231,7 @@ const Alerts = () => {
                   <ChartContainer config={sourceDistribution.reduce((acc, item) => {
                     acc[item.name.replace(/\s+/g, '')] = { label: item.name, color: item.color };
                     return acc;
-                  }, {} as Record<string, { label: string; color: string }>)} className="h-[200px]">
+                  }, {} as Record<string, { label: string; color: string }>)} className="h-[250px]">
                     <PieChart>
                       <Pie
                         data={sourceDistribution}
@@ -239,16 +239,50 @@ const Alerts = () => {
                         nameKey="name"
                         cx="50%"
                         cy="50%"
-                        outerRadius={60}
-                        label={(entry) => `${entry.name}: ${entry.value}`}
+                        outerRadius={70}
+                        label={({ name, value, percent }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
+                        labelLine={{ strokeWidth: 1 }}
                       >
                         {sourceDistribution.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
-                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <ChartTooltip 
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload;
+                            return (
+                              <div className="bg-card border rounded-lg p-3 shadow-lg">
+                                <p className="font-semibold text-sm">{data.name}</p>
+                                <p className="text-sm text-muted-foreground">
+                                  Alerts: <span className="font-medium text-foreground">{data.value}</span>
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {((data.value / alertStats.total) * 100).toFixed(1)}% of total
+                                </p>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
                     </PieChart>
                   </ChartContainer>
+                  {/* Legend */}
+                  <div className="mt-4 space-y-2">
+                    {sourceDistribution.map((item, index) => (
+                      <div key={index} className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-3 h-3 rounded-full" 
+                            style={{ backgroundColor: item.color }}
+                          />
+                          <span className="text-muted-foreground">{item.name}</span>
+                        </div>
+                        <span className="font-medium text-foreground">{item.value}</span>
+                      </div>
+                    ))}
+                  </div>
                 </CardContent>
               </Card>
             </div>
