@@ -18,27 +18,37 @@ from models.mock_model import outbreak_predictor
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})  # Enable CORS for frontend
 
-# Add JSON error handler
+# Add JSON error handler for API routes
 @app.errorhandler(404)
 def not_found(error):
+    if request.path.startswith('/api/'):
+        return jsonify({"error": "Endpoint not found", "path": request.path}), 404
     return jsonify({"error": "Endpoint not found"}), 404
 
 @app.errorhandler(500)
 def internal_error(error):
+    if request.path.startswith('/api/'):
+        return jsonify({"error": "Internal server error"}), 500
     return jsonify({"error": "Internal server error"}), 500
 
-# Ensure JSON responses
+# Ensure JSON responses for all API routes
 @app.after_request
 def after_request(response):
-    # Ensure all API responses are JSON
-    if request.path.startswith('/api/') and response.content_type and 'application/json' not in response.content_type:
-        if response.status_code >= 400:
+    # Force JSON content-type for all API routes
+    if request.path.startswith('/api/'):
+        # Always set JSON content-type for API routes
+        if response.content_type and 'application/json' not in response.content_type:
             try:
-                data = json.loads(response.get_data())
+                # Try to parse as JSON first
+                data = json.loads(response.get_data(as_text=True))
                 response.data = json.dumps(data)
-                response.content_type = 'application/json'
             except:
-                pass
+                # If not JSON, wrap in JSON error object
+                response.data = json.dumps({
+                    "error": response.get_data(as_text=True) or "Unknown error",
+                    "status_code": response.status_code
+                })
+        response.content_type = 'application/json'
     return response
 
 # Register blueprints

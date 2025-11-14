@@ -153,7 +153,7 @@ def start_kafka_monitor():
 
 @kafka_bp.route('/api/kafka/stats', methods=['GET'])
 def get_kafka_stats():
-    """Get Kafka statistics with mock data fallback"""
+    """Get Kafka statistics with mock data fallback - always returns JSON"""
     try:
         calculate_throughput()
         
@@ -237,7 +237,7 @@ def get_kafka_stats():
 
 @kafka_bp.route('/api/kafka/latest-data', methods=['GET'])
 def get_latest_kafka_data():
-    """Get latest data from Kafka topics with mock data fallback"""
+    """Get latest data from Kafka topics with mock data fallback - always returns JSON"""
     # Generate mock data if Kafka is not available
     if not KAFKA_AVAILABLE:
         return _get_mock_kafka_data()
@@ -311,64 +311,75 @@ def get_latest_kafka_data():
         return _get_mock_kafka_data()
 
 def _get_mock_kafka_data():
-    """Generate mock Kafka data for demonstration"""
-    import random
-    now = datetime.now()
-    
-    mock_data = {
-        'wastewater': [
-            {
-                'timestamp': (now - timedelta(minutes=random.randint(1, 10))).isoformat(),
-                'region': random.choice(['Northeast', 'Central', 'West']),
-                'viral_load': round(45 + random.uniform(-10, 15), 2),
-                'threshold': 70.0,
-                'sample_location': f"Treatment_Plant_{random.randint(1, 3)}"
-            }
-            for _ in range(random.randint(1, 3))
-        ],
-        'pharmacy': [
-            {
-                'timestamp': (now - timedelta(minutes=random.randint(1, 10))).isoformat(),
-                'region': random.choice(['Northeast', 'Central', 'West']),
-                'sales_index': round(75 + random.uniform(-15, 20), 2),
-                'baseline': 85.0,
-                'pharmacy_chain': random.choice(['CVS', 'Walgreens', 'Rite Aid'])
-            }
-            for _ in range(random.randint(1, 3))
-        ],
-        'alerts': [
-            {
-                'id': f"ALERT-{random.randint(100, 999)}",
-                'severity': random.choice(['high', 'medium', 'low']),
-                'region': f"{random.choice(['Northeast', 'Central', 'West'])} District",
-                'message': 'Elevated fever cases detected',
-                'timestamp': (now - timedelta(hours=random.randint(1, 5))).isoformat(),
-                'source': random.choice(['Federated Learning', 'Wastewater Analysis']),
-                'confidence': random.randint(75, 95)
-            }
-            for _ in range(random.randint(0, 2))
-        ],
-        'vitals': [
-            {
-                'patient_id': f"PT-{random.randint(2000, 9999)}",
-                'timestamp': (now - timedelta(minutes=random.randint(1, 30))).isoformat(),
-                'temperature': round(36.5 + random.uniform(-0.5, 2.0), 1),
-                'heart_rate': random.randint(65, 95),
-                'blood_pressure_systolic': random.randint(110, 130)
-            }
-            for _ in range(random.randint(1, 2))
-        ]
-    }
-    
-    total_count = sum(len(v) for v in mock_data.values())
-    
-    return jsonify({
-        'data': mock_data,
-        'count': total_count,
-        'timestamp': now.isoformat(),
-        'kafka_available': KAFKA_AVAILABLE,
-        'mode': 'mock'
-    })
+    """Generate mock Kafka data for demonstration - always returns JSON"""
+    try:
+        import random
+        now = datetime.now()
+        
+        mock_data = {
+            'wastewater': [
+                {
+                    'timestamp': (now - timedelta(minutes=random.randint(1, 10))).isoformat(),
+                    'region': random.choice(['Northeast', 'Central', 'West']),
+                    'viral_load': round(45 + random.uniform(-10, 15), 2),
+                    'threshold': 70.0,
+                    'sample_location': f"Treatment_Plant_{random.randint(1, 3)}"
+                }
+                for _ in range(random.randint(1, 3))
+            ],
+            'pharmacy': [
+                {
+                    'timestamp': (now - timedelta(minutes=random.randint(1, 10))).isoformat(),
+                    'region': random.choice(['Northeast', 'Central', 'West']),
+                    'sales_index': round(75 + random.uniform(-15, 20), 2),
+                    'baseline': 85.0,
+                    'pharmacy_chain': random.choice(['CVS', 'Walgreens', 'Rite Aid'])
+                }
+                for _ in range(random.randint(1, 3))
+            ],
+            'alerts': [
+                {
+                    'id': f"ALERT-{random.randint(100, 999)}",
+                    'severity': random.choice(['high', 'medium', 'low']),
+                    'region': f"{random.choice(['Northeast', 'Central', 'West'])} District",
+                    'message': 'Elevated fever cases detected',
+                    'timestamp': (now - timedelta(hours=random.randint(1, 5))).isoformat(),
+                    'source': random.choice(['Federated Learning', 'Wastewater Analysis']),
+                    'confidence': random.randint(75, 95)
+                }
+                for _ in range(random.randint(0, 2))
+            ],
+            'vitals': [
+                {
+                    'patient_id': f"PT-{random.randint(2000, 9999)}",
+                    'timestamp': (now - timedelta(minutes=random.randint(1, 30))).isoformat(),
+                    'temperature': round(36.5 + random.uniform(-0.5, 2.0), 1),
+                    'heart_rate': random.randint(65, 95),
+                    'blood_pressure_systolic': random.randint(110, 130)
+                }
+                for _ in range(random.randint(1, 2))
+            ]
+        }
+        
+        total_count = sum(len(v) for v in mock_data.values())
+        
+        return jsonify({
+            'data': mock_data,
+            'count': total_count,
+            'timestamp': now.isoformat(),
+            'kafka_available': KAFKA_AVAILABLE,
+            'mode': 'mock'
+        })
+    except Exception as e:
+        # Even on error, return JSON
+        return jsonify({
+            'data': {},
+            'count': 0,
+            'timestamp': datetime.now().isoformat(),
+            'kafka_available': KAFKA_AVAILABLE,
+            'mode': 'mock',
+            'error': str(e)
+        })
 
 # Start monitoring when module is imported
 try:
