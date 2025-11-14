@@ -1,10 +1,18 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Activity, TrendingUp, Bell, LogOut, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
 
 const Navigation = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { logout, username } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
 
   const navItems = [
     { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -45,6 +53,11 @@ const Navigation = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            {username && (
+              <span className="hidden sm:inline text-sm text-muted-foreground">
+                {username}
+              </span>
+            )}
             <div className="flex md:hidden items-center gap-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
@@ -65,7 +78,12 @@ const Navigation = () => {
                 );
               })}
             </div>
-            <Button variant="outline" size="sm" className="gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="gap-2"
+              onClick={handleLogout}
+            >
               <LogOut className="h-4 w-4" />
               <span className="hidden sm:inline">Logout</span>
             </Button>
