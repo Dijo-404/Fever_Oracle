@@ -121,12 +121,6 @@ const Login = () => {
               )}
             </Button>
           </form>
-
-          <div className="mt-6 pt-6 border-t">
-            <p className="text-xs text-center text-muted-foreground">
-              For demo purposes: Username: <code className="bg-muted px-1 rounded">dijo-10101</code>
-            </p>
-          </div>
         </CardContent>
       </Card>
     </div>
