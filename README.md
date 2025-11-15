@@ -4,6 +4,7 @@ Fever Oracle is a comprehensive healthcare monitoring system that uses machine l
 
 ## Features
 
+### Public Portal (Port 8080)
 - **Dashboard**: Real-time overview of outbreak predictions, patient status, and system metrics
 - **Patient Risk Assessment**: ML-based individualized risk assessment using digital twin models
 - **Alerts**: Cross-institutional federated learning and early warning system
@@ -15,12 +16,26 @@ Fever Oracle is a comprehensive healthcare monitoring system that uses machine l
 - **Responsive Design**: Works seamlessly on desktop and mobile devices
 - **Secure Authentication**: Login system with credential validation
 
+### Admin Portal (Port 7000)
+- **Admin Dashboard**: Overview statistics (hospitals, patients, hotspots, alerts)
+- **Hospitals Management**: View connected hospitals and their active cases
+- **Hotspots Monitoring**: Track predicted outbreak hotspots with risk levels
+- **Alerts Management**: System alerts with similarity match scores
+- **Clean Admin UI**: Modern TailwindCSS dashboard with sidebar navigation
+
 ## Architecture
+
+The Fever Oracle system consists of two frontend applications:
+
+1. **Public Portal** (Port 8080): Main user-facing application for monitoring and predictions
+2. **Admin Portal** (Port 7000): Administrative dashboard for system management
+
+Both portals connect to the same backend API (Port 5000).
 
 ```
 fever-oracle/
 ├── backend/                    # Flask REST API
-│   ├── app.py                 # Main Flask application
+│   ├── app.py                 # Main Flask application (includes admin endpoints)
 │   ├── blockchain_service.py  # Blockchain API endpoints
 │   ├── kafka_service.py       # Kafka monitoring and data access
 │   ├── config/                # Configuration files
@@ -34,7 +49,7 @@ fever-oracle/
 │   │   ├── patient.py         # Patient data model
 │   │   └── outbreak.py        # Outbreak prediction model
 │   └── requirements.txt       # Python dependencies
-├── frontend/                  # React + TypeScript frontend
+├── frontend/                  # React + TypeScript frontend (Public Portal - Port 8080)
 │   ├── src/                  # Source code
 │   │   ├── lib/
 │   │   │   ├── blockchain.ts # Blockchain API client
@@ -51,6 +66,24 @@ fever-oracle/
 │   │       └── ErrorBoundary.tsx  # Error handling
 │   ├── package.json          # Node dependencies
 │   └── vite.config.ts        # Vite configuration
+├── admin-portal/             # React + Vite Admin Portal (Port 7000)
+│   ├── src/
+│   │   ├── pages/            # Admin pages
+│   │   │   ├── Dashboard.jsx      # Admin dashboard
+│   │   │   ├── Hospitals.jsx      # Hospitals management
+│   │   │   ├── Hotspots.jsx       # Hotspots monitoring
+│   │   │   └── Alerts.jsx         # Alerts management
+│   │   ├── layouts/          # Layout components
+│   │   │   └── DashboardLayout.jsx  # Sidebar layout
+│   │   ├── components/       # Reusable components
+│   │   │   ├── StatCard.jsx
+│   │   │   ├── LoadingSpinner.jsx
+│   │   │   └── ErrorMessage.jsx
+│   │   └── lib/              # Utilities
+│   │       ├── api.js        # Axios API client
+│   │       └── utils.js      # Helper functions
+│   ├── package.json
+│   └── vite.config.js        # Vite config (port 7000)
 ├── data/                     # Data files
 │   ├── wastewater_demo.csv
 │   ├── otc_demo.csv
@@ -294,6 +327,12 @@ The page works in three modes:
 - `GET /api/kafka/latest-data?topics=wastewater,pharmacy` - Latest Kafka messages
 - `POST /api/model/predict` - Run ML prediction on Kafka data
 
+### Admin Portal API
+- `GET /admin/stats` - Admin dashboard statistics (hospitals, patients, hotspots, alerts)
+- `GET /admin/hospitals` - List of connected hospitals with case counts
+- `GET /admin/hotspots` - Predicted outbreak hotspots with risk levels
+- `GET /admin/alerts` - System alerts with similarity match scores
+
 ### Blockchain & Security
 - `GET /api/blockchain/info` - Get blockchain information and status
 - `POST /api/blockchain/audit` - Add audit log entry to blockchain
@@ -331,11 +370,19 @@ export FLASK_ENV=development
 python app.py
 ```
 
-### Frontend Development
+### Frontend Development (Public Portal)
 ```bash
 cd frontend
 npm run dev
 ```
+Public Portal runs on `http://localhost:8080`
+
+### Admin Portal Development
+```bash
+cd admin-portal
+npm run dev
+```
+Admin Portal runs on `http://localhost:7000`
 
 ### Running Tests
 ```bash
@@ -390,10 +437,11 @@ npm test
    docker-compose logs -f
    ```
 
-4. **Access the application:**
-   - Frontend: http://localhost:8080
-   - Backend API: http://localhost:5000
-   - Kafka Monitor: http://localhost:8080/kafka-monitor
+4. **Access the applications:**
+   - **Public Portal**: http://localhost:8080
+   - **Admin Portal**: http://localhost:7000
+   - **Backend API**: http://localhost:5000
+   - **Kafka Monitor**: http://localhost:8080/kafka-monitor
 
 5. **Stop services:**
    ```bash
@@ -403,6 +451,29 @@ npm test
 **Note**: The system works in mock mode even without Kafka. If Kafka services fail to start, the backend will automatically use mock data.
 
 For detailed Docker setup instructions, see [DOCKER_SETUP.md](DOCKER_SETUP.md).
+
+### Admin Portal Setup
+
+The Admin Portal runs separately on port 7000:
+
+**Local Development:**
+```bash
+cd admin-portal
+npm install
+npm run dev
+# Access at http://localhost:7000
+```
+
+**Docker:**
+```bash
+# Start admin portal
+docker-compose up -d admin-portal
+
+# Or start all services
+docker-compose up -d
+```
+
+For detailed Admin Portal setup, see [admin-portal/ADMIN_PORTAL_SETUP.md](admin-portal/ADMIN_PORTAL_SETUP.md).
 
 ## Environment Variables
 
@@ -414,7 +485,11 @@ FLASK_ENV=development
 PORT=5000
 KAFKA_BOOTSTRAP_SERVERS=kafka:9093
 
-# Frontend
+# Frontend (Public Portal)
+VITE_API_URL=http://localhost:5000
+
+# Admin Portal
+# Create admin-portal/.env file:
 VITE_API_URL=http://localhost:5000
 
 # Database
@@ -430,6 +505,18 @@ POSTGRES_PASSWORD=fever_password
 3. Commit your changes (`git commit -m 'Add some amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
+
+## Ports Summary
+
+| Service | Port | Description |
+|---------|------|-------------|
+| Backend API | 5000 | Flask REST API |
+| Public Portal | 8080 | Main user-facing React app |
+| Admin Portal | 7000 | Administrative dashboard |
+| PostgreSQL | 5432 | Database |
+| Kafka (external) | 9092 | Kafka broker (external access) |
+| Kafka (internal) | 9093 | Kafka broker (internal Docker network) |
+| Zookeeper | 2181 | Kafka coordination service |
 
 ## License
 
