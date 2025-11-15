@@ -4,6 +4,34 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+// Get auth token from localStorage
+const getAuthToken = (): string | null => {
+  try {
+    const auth = localStorage.getItem("fever_oracle_auth");
+    if (auth) {
+      const authData = JSON.parse(auth);
+      return authData.token || null;
+    }
+  } catch (e) {
+    // Ignore
+  }
+  return null;
+};
+
+// Add Authorization header to requests
+const getHeaders = (): HeadersInit => {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+  
+  const token = getAuthToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  
+  return headers;
+};
+
 export interface Patient {
   id: string;
   name: string;
@@ -64,7 +92,7 @@ class ApiClient {
       const response = await fetch(url, {
         ...options,
         headers: {
-          'Content-Type': 'application/json',
+          ...getHeaders(),
           ...options?.headers,
         },
       });

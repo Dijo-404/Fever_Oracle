@@ -3,7 +3,7 @@ Fever Oracle Backend API
 Flask application for handling patient data, outbreak predictions, and alerts
 """
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, g
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -21,6 +21,15 @@ from kafka_service import kafka_bp
 from models.mock_model import outbreak_predictor
 from utils.logger import logger
 from utils.security import add_security_headers, validate_json_content_type, sanitize_input
+from utils.auth import generate_token, verify_token, require_auth, require_role, hash_password, verify_password
+from utils.verification import generate_verification_token, generate_otp, get_verification_expiry
+from models.user import User, UserRole
+from models.fever_type import FeverType, DEFAULT_FEVER_TYPES
+from models.symptom_report import SymptomReport
+from models.region import Region, INDIA_STATES
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from services.chatbot_engine import chatbot_engine
 
 app = Flask(__name__)
 app.config['JSON_SORT_KEYS'] = False
@@ -116,12 +125,532 @@ def after_request(response):
     
     return response
 
+# Database connection helper
+def get_db_connection():
+    """Get database connection"""
+    try:
+        return psycopg2.connect(
+            host=os.getenv('POSTGRES_HOST', 'localhost'),
+            port=os.getenv('POSTGRES_PORT', '5432'),
+            database=os.getenv('POSTGRES_DB', 'fever_oracle'),
+            user=os.getenv('POSTGRES_USER', 'fever_user'),
+            password=os.getenv('POSTGRES_PASSWORD', 'fever_password')
+        )
+    except Exception as e:
+        logger.error(f"Database connection error: {e}")
+        return None
+
 # Register blueprints
 app.register_blueprint(blockchain_bp)
 app.register_blueprint(kafka_bp)
 
 # Data paths
 DATA_DIR = Path(__file__).parent.parent / "data"
+
+# ============================================================================
+# Authentication & User Management Endpoints
+# ============================================================================
+
+@app.route('/api/auth/register', methods=['POST'])
+@validate_json_content_type
+@limiter.limit("10 per minute")
+def register():
+    """User registration endpoint"""
+    try:
+        data = request.get_json()
+        email = data.get('email', '').strip().lower()
+        password = data.get('password', '')
+        role = data.get('role', 'patient').lower()
+        full_name = data.get('full_name', '').strip()
+        phone = data.get('phone', '').strip()
+        location = data.get('location', '').strip()
+        
+        # Validation
+        if not email or '@' not in email:
+            return jsonify({"error": "Valid email is required"}), 400
+        
+        if not password or len(password) < 8:
+            return jsonify({"error": "Password must be at least 8 characters"}), 400
+        
+        if role not in ['patient', 'doctor', 'pharma']:
+            return jsonify({"error": "Invalid role. Must be patient, doctor, or pharma"}), 400
+        
+        # Check if user exists
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
+        existing = cursor.fetchone()
+        
+        if existing:
+            cursor.close()
+            conn.close()
+            return jsonify({"error": "Email already registered"}), 400
+        
+        # Create user
+        password_hash = hash_password(password)
+        verification_token = generate_verification_token()
+        verification_expires = get_verification_expiry()
+        
+        cursor.execute("""
+            INSERT INTO users (email, phone, password_hash, role, full_name, location, 
+                            verification_token, verification_expires)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, email, role, verified, created_at
+        """, (email, phone, password_hash, role, full_name, location, 
+              verification_token, verification_expires))
+        
+        user = cursor.fetchone()
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        # Send verification email (mock for now)
+        from utils.verification import send_verification_email
+        send_verification_email(email, verification_token)
+        
+        logger.info(f"User registered: {email} with role {role}")
+        
+        return jsonify({
+            "message": "Registration successful. Please verify your email.",
+            "user": {
+                "id": str(user['id']),
+                "email": user['email'],
+                "role": user['role'],
+                "verified": user['verified']
+            }
+        }), 201
+        
+    except Exception as e:
+        logger.error(f"Registration error: {e}", exc_info=True)
+        if 'conn' in locals():
+            conn.rollback()
+            conn.close()
+        return jsonify({"error": "Registration failed"}), 500
+
+@app.route('/api/auth/login', methods=['POST'])
+@validate_json_content_type
+@limiter.limit("20 per minute")
+def login():
+    """User login endpoint with role-based authentication"""
+    try:
+        data = request.get_json()
+        email = data.get('email', '').strip().lower()
+        password = data.get('password', '')
+        
+        if not email or not password:
+            return jsonify({"error": "Email and password are required"}), 400
+        
+        # Get user from database
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("""
+            SELECT id, email, password_hash, role, verified, full_name, location
+            FROM users WHERE email = %s
+        """, (email,))
+        
+        user = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not user:
+            return jsonify({"error": "Invalid email or password"}), 401
+        
+        # Verify password
+        if not verify_password(password, user['password_hash']):
+            return jsonify({"error": "Invalid email or password"}), 401
+        
+        # Generate tokens
+        tokens = generate_token(
+            user_id=str(user['id']),
+            role=user['role'],
+            email=user['email']
+        )
+        
+        logger.info(f"User logged in: {email} with role {user['role']}")
+        
+        return jsonify({
+            "message": "Login successful",
+            "tokens": tokens,
+            "user": {
+                "id": str(user['id']),
+                "email": user['email'],
+                "role": user['role'],
+                "full_name": user['full_name'],
+                "location": user['location'],
+                "verified": user['verified']
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Login error: {e}", exc_info=True)
+        return jsonify({"error": "Login failed"}), 500
+
+@app.route('/api/auth/me', methods=['GET'])
+@require_auth
+def get_current_user():
+    """Get current authenticated user info"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("""
+            SELECT id, email, role, verified, full_name, location, created_at
+            FROM users WHERE id = %s
+        """, (g.current_user_id,))
+        
+        user = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        
+        return jsonify({
+            "user": {
+                "id": str(user['id']),
+                "email": user['email'],
+                "role": user['role'],
+                "verified": user['verified'],
+                "full_name": user['full_name'],
+                "location": user['location'],
+                "created_at": user['created_at'].isoformat() if user['created_at'] else None
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Get user error: {e}", exc_info=True)
+        return jsonify({"error": "Failed to get user info"}), 500
+
+@app.route('/api/auth/verify-email', methods=['POST'])
+@validate_json_content_type
+def verify_email():
+    """Verify email with token"""
+    try:
+        data = request.get_json()
+        token = data.get('token', '').strip()
+        
+        if not token:
+            return jsonify({"error": "Verification token is required"}), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("""
+            SELECT id FROM users 
+            WHERE verification_token = %s 
+            AND verification_expires > CURRENT_TIMESTAMP
+        """, (token,))
+        
+        user = cursor.fetchone()
+        
+        if not user:
+            cursor.close()
+            conn.close()
+            return jsonify({"error": "Invalid or expired verification token"}), 400
+        
+        # Mark as verified
+        cursor.execute("""
+            UPDATE users 
+            SET verified = TRUE, verification_token = NULL, verification_expires = NULL
+            WHERE id = %s
+        """, (user['id'],))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"Email verified for user: {user['id']}")
+        
+        return jsonify({"message": "Email verified successfully"}), 200
+        
+    except Exception as e:
+        logger.error(f"Email verification error: {e}", exc_info=True)
+        if 'conn' in locals():
+            conn.rollback()
+            conn.close()
+        return jsonify({"error": "Verification failed"}), 500
+
+@app.route('/api/auth/refresh', methods=['POST'])
+@validate_json_content_type
+def refresh_token():
+    """Refresh access token using refresh token"""
+    try:
+        data = request.get_json()
+        refresh_token = data.get('refresh_token', '')
+        
+        if not refresh_token:
+            return jsonify({"error": "Refresh token is required"}), 400
+        
+        # Verify refresh token
+        payload = verify_token(refresh_token)
+        if not payload or payload.get('type') != 'refresh':
+            return jsonify({"error": "Invalid or expired refresh token"}), 401
+        
+        # Get user info
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("""
+            SELECT id, email, role FROM users WHERE id = %s
+        """, (payload.get('user_id'),))
+        
+        user = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        
+        # Generate new tokens
+        tokens = generate_token(
+            user_id=str(user['id']),
+            role=user['role'],
+            email=user['email']
+        )
+        
+        return jsonify({"tokens": tokens}), 200
+        
+    except Exception as e:
+        logger.error(f"Token refresh error: {e}", exc_info=True)
+        return jsonify({"error": "Token refresh failed"}), 500
+
+@app.route('/api/map/regions', methods=['GET'])
+@require_auth
+def get_map_regions():
+    """Get region data for map visualization"""
+    try:
+        fever_type = request.args.get('fever_type')
+        
+        # Get outbreak cases by region
+        conn = get_db_connection()
+        if conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Get cases from database if available
+            query = """
+                SELECT r.name, r.latitude, r.longitude, 
+                       SUM(oc.case_count) as total_cases,
+                       oc.fever_type_id
+                FROM regions r
+                LEFT JOIN outbreak_cases oc ON r.id = oc.region_id
+                WHERE r.type = 'region'
+            """
+            params = []
+            if fever_type:
+                query += " AND oc.fever_type_id = (SELECT id FROM fever_types WHERE name = %s)"
+                params.append(fever_type)
+            
+            query += " GROUP BY r.name, r.latitude, r.longitude, oc.fever_type_id"
+            cursor.execute(query, params)
+            db_regions = cursor.fetchall()
+            cursor.close()
+            conn.close()
+            
+            if db_regions:
+                regions = []
+                for row in db_regions:
+                    regions.append({
+                        "name": row['name'],
+                        "latitude": float(row['latitude']) if row['latitude'] else None,
+                        "longitude": float(row['longitude']) if row['longitude'] else None,
+                        "case_count": int(row['total_cases'] or 0),
+                    })
+                return jsonify({"regions": regions})
+        
+        # Fallback to mock data
+        from models.region import INDIA_STATES
+        regions = []
+        import random
+        for state in INDIA_STATES:
+            regions.append({
+                "name": state["name"],
+                "latitude": state["latitude"],
+                "longitude": state["longitude"],
+                "case_count": random.randint(50, 200),
+            })
+        
+        return jsonify({"regions": regions})
+    except Exception as e:
+        logger.error(f"Error getting map regions: {e}", exc_info=True)
+        # Return mock data on error
+        from models.region import INDIA_STATES
+        import random
+        regions = []
+        for state in INDIA_STATES:
+            regions.append({
+                "name": state["name"],
+                "latitude": state["latitude"],
+                "longitude": state["longitude"],
+                "case_count": random.randint(50, 200),
+            })
+        return jsonify({"regions": regions})
+
+# ============================================================================
+# Chatbot Endpoints
+# ============================================================================
+
+@app.route('/api/chatbot/start-session', methods=['POST'])
+@require_auth
+def start_chatbot_session():
+    """Start a new chatbot session"""
+    try:
+        session_id = f"chat_{datetime.now().timestamp()}_{g.current_user_id}"
+        return jsonify({
+            "session_id": session_id,
+            "message": "Session started",
+            "next_question": chatbot_engine.get_next_question({}, "start")
+        }), 200
+    except Exception as e:
+        logger.error(f"Error starting chatbot session: {e}", exc_info=True)
+        return jsonify({"error": "Failed to start session"}), 500
+
+@app.route('/api/chatbot/message', methods=['POST'])
+@require_auth
+@validate_json_content_type
+def process_chatbot_message():
+    """Process chatbot message and return response"""
+    try:
+        data = request.get_json()
+        session_id = data.get('session_id')
+        message = data.get('message')
+        current_step = data.get('current_step', 'start')
+        session_data = data.get('session_data', {})
+        
+        if not session_id:
+            return jsonify({"error": "Session ID is required"}), 400
+        
+        # Process answer based on current step
+        if current_step and message:
+            # Store answer in session data
+            question = chatbot_engine.symptom_questions.get(current_step, {})
+            key = question.get('key')
+            if key:
+                # Process answer based on type
+                if question.get('type') == 'yes_no':
+                    session_data[key] = message.lower() in ['yes', 'y', 'true', '1']
+                elif question.get('type') == 'number':
+                    try:
+                        session_data[key] = float(message)
+                    except:
+                        session_data[key] = None
+                elif question.get('type') == 'multi_choice':
+                    # Assume comma-separated or array
+                    if isinstance(message, list):
+                        session_data[key] = message
+                    else:
+                        session_data[key] = [m.strip() for m in str(message).split(',')]
+                else:
+                    session_data[key] = message
+        
+        # Get next question
+        next_question = chatbot_engine.get_next_question(session_data, current_step)
+        
+        # If no more questions, analyze symptoms
+        if not next_question:
+            analysis = chatbot_engine.analyze_symptoms(session_data)
+            return jsonify({
+                "session_id": session_id,
+                "message": analysis["recommendation"],
+                "analysis": analysis,
+                "next_question": None,
+                "completed": True
+            }), 200
+        
+        return jsonify({
+            "session_id": session_id,
+            "message": next_question.get("question", ""),
+            "next_question": next_question,
+            "session_data": session_data,
+            "completed": False
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error processing chatbot message: {e}", exc_info=True)
+        return jsonify({"error": "Failed to process message"}), 500
+
+@app.route('/api/chatbot/submit-report', methods=['POST'])
+@require_auth
+@validate_json_content_type
+def submit_symptom_report():
+    """Submit symptom report to database"""
+    try:
+        data = request.get_json()
+        session_id = data.get('session_id')
+        session_data = data.get('session_data', {})
+        analysis = data.get('analysis', {})
+        
+        if not session_id:
+            return jsonify({"error": "Session ID is required"}), 400
+        
+        # Get fever type ID
+        fever_type_id = None
+        suspected_type = analysis.get('suspected_fever_type')
+        if suspected_type:
+            conn = get_db_connection()
+            if conn:
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                cursor.execute("SELECT id FROM fever_types WHERE name = %s", (suspected_type,))
+                fever_type = cursor.fetchone()
+                if fever_type:
+                    fever_type_id = str(fever_type['id'])
+                cursor.close()
+                conn.close()
+        
+        # Save to database
+        conn = get_db_connection()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO symptom_reports 
+                (user_id, session_id, symptoms, suspected_fever_type, temperature, 
+                 location, age, gender, travel_history, recommendation, risk_score)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (
+                g.current_user_id,
+                session_id,
+                json.dumps(session_data),
+                fever_type_id,
+                session_data.get('temperature'),
+                session_data.get('location'),
+                session_data.get('age'),
+                session_data.get('gender'),
+                session_data.get('travel_location'),
+                analysis.get('recommendation'),
+                analysis.get('risk_score', 0)
+            ))
+            report_id = cursor.fetchone()[0]
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+            logger.info(f"Symptom report submitted: {report_id} by user {g.current_user_id}")
+            
+            return jsonify({
+                "message": "Report submitted successfully",
+                "report_id": str(report_id)
+            }), 201
+        
+        return jsonify({"message": "Report processed (database unavailable)"}), 200
+        
+    except Exception as e:
+        logger.error(f"Error submitting symptom report: {e}", exc_info=True)
+        if 'conn' in locals():
+            conn.rollback()
+            conn.close()
+        return jsonify({"error": "Failed to submit report"}), 500
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -153,6 +682,7 @@ def health_check():
 
 @app.route('/api/patients', methods=['GET'])
 @limiter.limit("60 per minute")
+@require_auth
 def get_patients():
     """Get all patients with risk assessment - uses mock data if file not found"""
     try:
@@ -216,6 +746,7 @@ def get_patients():
         }), 200
 
 @app.route('/api/patients/<patient_id>', methods=['GET'])
+@require_auth
 def get_patient(patient_id):
     """Get specific patient by ID - uses mock data if not found"""
     try:
@@ -839,7 +1370,28 @@ if __name__ == '__main__':
     config_dir = Path(__file__).parent / "config"
     config_dir.mkdir(parents=True, exist_ok=True)
     
+    # Initialize database on startup (optional - can be done separately)
+    try:
+        from database.init_db import init_database
+        logger.info("Initializing database...")
+        init_database()
+    except Exception as e:
+        logger.warning(f"Database initialization skipped: {e}")
+    
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV') == 'development'
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    
+    logger.info("Starting Fever Oracle Backend", extra={
+        "port": port,
+        "debug": debug,
+        "environment": os.environ.get('FLASK_ENV', 'production')
+    })
+    
+    try:
+        app.run(host='0.0.0.0', port=port, debug=debug, threaded=True)
+    except KeyboardInterrupt:
+        logger.info("Shutting down gracefully...")
+    except Exception as e:
+        logger.error("Fatal error starting server", extra={"error": str(e)}, exc_info=True)
+        sys.exit(1)
 
