@@ -636,19 +636,58 @@ def get_admin_hospitals():
 
 @app.route('/admin/hotspots', methods=['GET'])
 def get_admin_hotspots():
-    """Get predicted hotspots for admin portal"""
+    """Get predicted hotspots for admin portal - synchronized with public portal regional data"""
     try:
-        # Mock data - replace with actual data source
+        # Use the same regional data as public portal for consistency
+        # Regional outbreak data from public portal:
+        # Northeast: cases: 142, risk: "high", trend: "increasing"
+        # Central: cases: 98, risk: "medium", trend: "stable"
+        # West: cases: 156, risk: "high", trend: "increasing"
+        # South: cases: 87, risk: "low", trend: "decreasing"
+        # Northwest: cases: 73, risk: "low", trend: "stable"
+        
+        # Map regions to hotspots with lead times based on risk and trend
         hotspots = [
-            {"area": "Downtown District", "predicted_risk": "High", "lead_time_days": 3},
-            {"area": "Northside Suburbs", "predicted_risk": "Medium", "lead_time_days": 7},
-            {"area": "East End", "predicted_risk": "High", "lead_time_days": 5},
-            {"area": "West Quarter", "predicted_risk": "Low", "lead_time_days": 12},
-            {"area": "Central Plaza", "predicted_risk": "Medium", "lead_time_days": 8},
+            {
+                "area": "Northeast",
+                "predicted_risk": "High",
+                "lead_time_days": 3,  # High risk + increasing trend = short lead time
+                "cases": 142,
+                "trend": "increasing"
+            },
+            {
+                "area": "West",
+                "predicted_risk": "High",
+                "lead_time_days": 4,  # High risk + increasing trend = short lead time
+                "cases": 156,
+                "trend": "increasing"
+            },
+            {
+                "area": "Central",
+                "predicted_risk": "Medium",
+                "lead_time_days": 7,  # Medium risk + stable trend = medium lead time
+                "cases": 98,
+                "trend": "stable"
+            },
+            {
+                "area": "South",
+                "predicted_risk": "Low",
+                "lead_time_days": 14,  # Low risk + decreasing trend = long lead time
+                "cases": 87,
+                "trend": "decreasing"
+            },
+            {
+                "area": "Northwest",
+                "predicted_risk": "Low",
+                "lead_time_days": 12,  # Low risk + stable trend = longer lead time
+                "cases": 73,
+                "trend": "stable"
+            },
         ]
         return jsonify({"hotspots": hotspots, "count": len(hotspots)})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("Error getting admin hotspots", extra={"error": str(e)}, exc_info=True)
+        return jsonify({"error": str(e), "hotspots": [], "count": 0}), 500
 
 @app.route('/admin/alerts', methods=['GET'])
 def get_admin_alerts():

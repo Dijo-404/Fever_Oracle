@@ -21,13 +21,13 @@ export default function Hotspots() {
       setHotspots(response.data?.hotspots || response.data || [])
       setError(null)
     } catch (err) {
-      // Mock data for development (silent fallback)
+      // Mock data for development (silent fallback) - matching public portal regions
       setHotspots([
-        { area: 'Downtown District', predicted_risk: 'High', lead_time_days: 3 },
-        { area: 'Northside Suburbs', predicted_risk: 'Medium', lead_time_days: 7 },
-        { area: 'East End', predicted_risk: 'High', lead_time_days: 5 },
-        { area: 'West Quarter', predicted_risk: 'Low', lead_time_days: 12 },
-        { area: 'Central Plaza', predicted_risk: 'Medium', lead_time_days: 8 },
+        { area: 'Northeast', predicted_risk: 'High', lead_time_days: 3, cases: 142, trend: 'increasing' },
+        { area: 'West', predicted_risk: 'High', lead_time_days: 4, cases: 156, trend: 'increasing' },
+        { area: 'Central', predicted_risk: 'Medium', lead_time_days: 7, cases: 98, trend: 'stable' },
+        { area: 'South', predicted_risk: 'Low', lead_time_days: 14, cases: 87, trend: 'decreasing' },
+        { area: 'Northwest', predicted_risk: 'Low', lead_time_days: 12, cases: 73, trend: 'stable' },
       ])
       if (import.meta.env.DEV) {
         console.warn('Using mock data:', err.message)
