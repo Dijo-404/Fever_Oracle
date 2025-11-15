@@ -10,7 +10,7 @@ services:
       - FLASK_ENV=development
       - PORT=5000
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9093
-      - ALLOWED_ORIGINS=http://localhost:8080,http://localhost:7000
+      - ALLOWED_ORIGINS=http://localhost:8080,http://localhost:7000,http://localhost:8081
     volumes:
       - ./backend:/app
       - ./data:/app/data
@@ -135,6 +135,25 @@ services:
       - VITE_API_URL=http://localhost:5000
     volumes:
       - ./admin-portal:/app
+      - /app/node_modules
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - fever-oracle-network
+
+  patient-portal:
+    build:
+      context: ./patient-portal
+      dockerfile: Dockerfile
+    container_name: fever-oracle-patient-portal
+    ports:
+      - "8081:8081"
+    environment:
+      - VITE_API_URL=http://localhost:5000
+    volumes:
+      - ./patient-portal:/app
       - /app/node_modules
     depends_on:
       backend:

@@ -3,6 +3,7 @@ import { adminAPI } from '@/lib/api'
 import StatCard from '@/components/StatCard'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import ErrorMessage from '@/components/ErrorMessage'
+import OutbreakMap from '@/components/OutbreakMap'
 import { Building2, Users, MapPin, Bell } from 'lucide-react'
 import { formatNumber } from '@/lib/utils'
 
@@ -89,6 +90,17 @@ export default function Dashboard() {
           value={formatNumber(stats?.alerts_24h || 0)}
           icon={Bell}
         />
+      </div>
+
+      {/* Outbreak Map */}
+      <div className="mt-6">
+        <div className="mb-4">
+          <h2 className="text-2xl font-bold">Outbreak Map</h2>
+          <p className="text-muted-foreground mt-1">Interactive map showing predicted hotspots and outbreak cases</p>
+        </div>
+        <div className="bg-card border border-border rounded-lg p-6">
+          <OutbreakMap height="500px" />
+        </div>
       </div>
     </div>
   )

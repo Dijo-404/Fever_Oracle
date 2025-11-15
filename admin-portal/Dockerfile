@@ -5,7 +5,7 @@ WORKDIR /app
 # Copy package files
 COPY package.json package-lock.json* ./
 
-# Install dependencies
+# Install dependencies (including react-leaflet and leaflet)
 RUN npm install --legacy-peer-deps
 
 # Copy application code

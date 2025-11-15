@@ -17,6 +17,7 @@ import {
 } from "@/lib/mockData";
 import { blockchainClient, BlockchainInfo } from "@/lib/blockchain";
 import { toast } from "sonner";
+import OutbreakMap from "@/components/OutbreakMap";
 
 const Dashboard = () => {
   const [blockchainInfo, setBlockchainInfo] = useState<BlockchainInfo | null>(null);
@@ -229,6 +230,20 @@ const Dashboard = () => {
                 />
               </RechartsLineChart>
             </ChartContainer>
+          </CardContent>
+        </Card>
+
+        {/* Outbreak Map */}
+        <Card className="shadow-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-primary" />
+              Outbreak Map
+            </CardTitle>
+            <CardDescription>Interactive map showing fever outbreak cases by region</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <OutbreakMap height="500px" />
           </CardContent>
         </Card>
 
